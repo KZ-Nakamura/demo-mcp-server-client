@@ -7,7 +7,13 @@ Almost scratch MCP Host/Client/Server in Ruby
 - [MCP Server](https://modelcontextprotocol.io/quickstart/server)
 - [MCP Schema](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/3ba3181c7779da74b24f0c083eb7055b6fc9d928/schema/2025-03-26/schema.ts)
 
-## Usage
+# Usage
+
+0. Set up environment:
+
+```bash
+cp .env.example .env
+```
 
 1. Install dependencies:
 
@@ -21,14 +27,14 @@ bundle install
 ruby main.rb
 ```
 
-## Current implementation
+# Current implementation
 
 - Transports
   - stdio only
 - MCP Server
   - Currently, **the dice server(`mcp/dice/server.rb`) is fixed as the MCP server.**
 
-## Supported MCP Protocol
+# Supported MCP Protocol
 - Initialization
   - initialize request
   - initialize response
@@ -43,7 +49,7 @@ ruby main.rb
       - text content only
 - Shutdown
 
-## TODO
+# TODO
 - To register multiple MCP servers
 - Transports
   - Streamable HTTP
