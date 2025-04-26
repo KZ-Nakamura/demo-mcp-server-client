@@ -9,6 +9,14 @@ module MCP
       # TODO: とりあえずrubyのMCPサーバーのみ対応
       @stdin, @stdout, @stderr, @wait_thr = Open3.popen3("ruby #{server_file_path}")
       @pid = @wait_thr.pid
+      Thread.new do
+        loop do
+          line = @stderr.gets
+          puts "stderr: #{line}"
+        end
+      rescue IOError
+        # Nothing to do
+      end
     end
 
     def send_request(request)
@@ -33,12 +41,6 @@ module MCP
         method: 'initialize',
         params: {
           protocolVersion: '2024-11-05',
-          capabilities: {
-            roots: {
-              listChanged: true
-            },
-            sampling: {}
-          },
           clientInfo: {
             name: 'MCP Client',
             version: '1.0.0'
@@ -48,10 +50,10 @@ module MCP
       })
 
       # initialized notification
-      send_request({
+      @stdin.puts(JSON.generate({
         jsonrpc: '2.0',
         method: 'notifications/initialized'
-      })
+      }))
 
       response
     end
@@ -77,6 +79,19 @@ module MCP
       # すでにプロセスが終了している場合は何もしない
     ensure
       @pid = nil
+    end
+
+    # List tools
+    # https://modelcontextprotocol.io/specification/2025-03-26/server/tools#listing-tools
+    def list_tools
+      return raise 'Server is not running' if @pid.nil?
+
+      send_request({
+        jsonrpc: '2.0',
+        method: 'tools/list',
+        params: {},
+        id: SecureRandom.uuid
+      })
     end
   end
 end
