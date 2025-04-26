@@ -93,5 +93,16 @@ module MCP
         id: SecureRandom.uuid
       })
     end
+
+    # Calling tool
+    # https://modelcontextprotocol.io/specification/2025-03-26/server/tools#calling-tools
+    def call_tool(name:, args: {})
+      send_request({
+        jsonrpc: '2.0',
+        method: 'tools/call',
+        params: { name: name, args: args },
+        id: SecureRandom.uuid
+      })
+    end
   end
 end

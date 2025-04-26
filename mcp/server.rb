@@ -28,11 +28,12 @@ module MCP
       end
     end
 
-    def register_tool(name:, description:, input_schema:)
+    def register_tool(name:, description:, input_schema:, handler:)
       @tools[name] = {
         name: name,
         description: description,
-        input_schema: input_schema
+        input_schema: input_schema,
+        handler: handler
       }
     end
 
@@ -102,6 +103,19 @@ module MCP
           id: request['id'],
           result: {
             tools: tools
+          }
+        }
+      when 'tools/call'
+        @logger.info('RPC: tools/call')
+        tool_name = request['params']['name']
+        tool_args = request['params']['args']
+        tool = @tools[tool_name]
+        result = tool[:handler].call(tool_args)
+        {
+          jsonrpc: '2.0',
+          id: request['id'],
+          result: {
+            content: result
           }
         }
       end

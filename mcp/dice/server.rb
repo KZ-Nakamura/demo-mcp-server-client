@@ -13,6 +13,9 @@ require_relative '../server'
       }
     },
     required: ['sides']
-  }
+  },
+  handler: proc do |args|
+    rand(1..args['sides'])
+  end
 )
 @server.run

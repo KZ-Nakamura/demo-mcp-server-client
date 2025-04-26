@@ -6,3 +6,9 @@ Style/Documentation:
   Enabled: false
 Layout/FirstHashElementIndentation:
   Enabled: false
+Metrics/AbcSize:
+  Enabled: false
+Metrics/BlockLength:
+  Enabled: false
+Metrics/ClassLength:
+  Enabled: false
