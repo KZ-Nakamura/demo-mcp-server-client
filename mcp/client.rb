@@ -1,65 +1,8 @@
-require 'dotenv'
-require 'anthropic'
 require 'json'
 require 'open3'
 
-Dotenv.load
-
-module MCPClient
+module MCP
   class Client
-    attr_reader :connection
-
-    def initialize(server_file_path)
-      @server_file_path = server_file_path
-      @connection = Connection.new(server_file_path)
-    end
-
-    def connect_to_server
-      @connection.initialize_connection
-    end
-
-    def chat_loop
-      puts 'MCP Client Started!'
-      puts "Type your queries 'exit' to exit."
-
-      loop do
-        input = $stdin.gets.chomp
-        break if input.downcase == 'exit'
-
-        process_query(input)
-      end
-    end
-
-    private
-
-    def process_query(query)
-      puts "process #{query}"
-      client = Anthropic::Client.new(
-        access_token: ENV.fetch('ANTHROPIC_API_KEY', nil),
-        log_errors: true
-      )
-
-      response = client.messages(
-        parameters: {
-          model: 'claude-3-7-sonnet-20250219',
-          system: 'Respond only in Japanese.',
-          messages: [
-            { 'role': 'user', 'content': query }
-          ],
-          max_tokens: 1000
-        }
-      )
-
-      if response['content'].empty?
-        puts 'No response from the server'
-        return
-      end
-
-      puts response['content'][0]['text']
-    end
-  end
-
-  class Connection
     attr_reader :stdin, :stdout, :stderr, :wait_thr
 
     def initialize(server_file_path)
@@ -113,18 +56,3 @@ module MCPClient
     end
   end
 end
-
-def main
-  file_path = ARGV[0]
-
-  if file_path.nil?
-    puts 'Please provide a server file path'
-    exit
-  end
-
-  client = MCPClient::Client.new(file_path)
-  client.connect_to_server
-  client.chat_loop
-end
-
-main
