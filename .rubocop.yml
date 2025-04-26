@@ -2,3 +2,7 @@ Style/FrozenStringLiteralComment:
   Enabled: false
 Metrics/MethodLength:
   Enabled: false
+Style/Documentation:
+  Enabled: false
+Layout/FirstHashElementIndentation:
+  Enabled: false
