@@ -57,20 +57,7 @@ module MCP
           jsonrpc: '2.0',
           id: 1,
           result: {
-            protocolVersion: '2024-11-05',
-            capabilities: {
-              logging: {},
-              prompts: {
-                listChanged: true
-              },
-              resources: {
-                subscribe: true,
-                listChanged: true
-              },
-              tools: {
-                listChanged: true
-              }
-            },
+            protocolVersion: '2025-03-26',
             serverInfo: {
               name: 'MCP Client',
               version: '1.0.0'

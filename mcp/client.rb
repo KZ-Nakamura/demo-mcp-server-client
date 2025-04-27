@@ -40,7 +40,7 @@ module MCP
         jsonrpc: '2.0',
         method: 'initialize',
         params: {
-          protocolVersion: '2024-11-05',
+          protocolVersion: '2025-03-26',
           clientInfo: {
             name: 'MCP Client',
             version: '1.0.0'
