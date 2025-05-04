@@ -83,15 +83,37 @@ module MCP
 
             begin
               # ツール結果をLLMに送信するためのメッセージを作成
-              updated_messages = @llm_provider.create_tool_result_message(
-                messages: messages,
-                tool_use: tool_use,
-                result: result[:content]
-              )
+              tool_messages = [
+                { role: 'user', content: messages.first['content'] },
+                {
+                  role: 'assistant',
+                  content: '',
+                  tool_calls: [
+                    {
+                      id: tool_use[:id],
+                      type: 'function',
+                      function: {
+                        name: tool_use[:name],
+                        arguments: tool_use[:args].is_a?(Hash) ? JSON.generate(tool_use[:args]) : tool_use[:args].to_s
+                      }
+                    }
+                  ]
+                },
+                {
+                  role: 'tool',
+                  tool_call_id: tool_use[:id],
+                  content: result[:content].to_s
+                }
+              ]
+              
+              # システムメッセージを先頭に追加
+              tool_messages.unshift({ role: 'system', content: 'Respond only in Japanese.' })
+              
+              puts "メッセージ配列: #{tool_messages.inspect}"
 
               # 結果を元にLLMから再度応答を取得
               response = @llm_provider.generate_message(
-                messages: updated_messages, 
+                messages: tool_messages, 
                 tools: []  # ツール使用後は通常の応答を期待
               )
 

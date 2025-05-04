@@ -14,19 +14,29 @@ module MCP
       end
 
       def generate_message(messages:, tools:, max_tokens: 1000)
+        puts "元のメッセージ: #{messages.inspect}"
         # OpenAI用にメッセージを加工
         processed_messages = messages.map do |msg|
-          if msg['role'] == 'user' && msg['content'].is_a?(String)
+          if msg[:role] && msg[:content]
+            # すでにシンボルキーの場合はそのまま
+            msg
+          elsif msg['role'] == 'user' && msg['content'].is_a?(String)
             { role: 'user', content: msg['content'] }
           elsif msg['role'] == 'assistant' && msg['content'].is_a?(Array)
             process_assistant_message(msg)
           elsif msg['role'] == 'user' && msg['content'].is_a?(Array) && msg['content'][0]['type'] == 'tool_result'
             process_tool_result_message(msg)
-          else
-            # その他のケースはそのままマップ
+          elsif msg['role'] && msg['content']
+            # 文字列キーをシンボルキーに変換
             { role: msg['role'], content: msg['content'] }
+          else
+            puts "警告: 不明なメッセージ形式: #{msg.inspect}"
+            # その他のケースはそのまま（警告を出す）
+            msg
           end
         end
+
+        puts "処理後のメッセージ: #{processed_messages.inspect}"
 
         # systemメッセージを追加
         processed_messages.unshift({ role: 'system', content: @system }) unless processed_messages.any? { |m| m[:role] == 'system' }
@@ -58,8 +68,15 @@ module MCP
 
         puts "OpenAI API Request: #{params.inspect}"
 
-        # APIリクエスト
-        @client.chat(parameters: params)
+        begin
+          # APIリクエスト
+          @client.chat(parameters: params)
+        rescue Faraday::Error => e
+          if e.response
+            puts "OpenAI API Error Response: #{e.response[:body]}"
+          end
+          raise e
+        end
       end
 
       def extract_text(response)
@@ -88,39 +105,34 @@ module MCP
       end
 
       def create_tool_result_message(messages:, tool_use:, result:)
-        # メッセージ配列をコピー
-        new_messages = []
-        
-        # システムメッセージを追加
-        new_messages << { 'role' => 'system', 'content' => @system }
-        
-        # ユーザーの元の質問を追加
-        new_messages << { 'role' => 'user', 'content' => messages.first['content'] }
-        
-        # アシスタントのツール使用メッセージ
-        new_messages << {
-          'role' => 'assistant',
-          'content' => nil,
-          'tool_calls' => [
-            {
-              'id' => tool_use[:id],
-              'type' => 'function',
-              'function' => {
-                'name' => tool_use[:name],
-                'arguments' => tool_use[:args].is_a?(Hash) ? JSON.generate(tool_use[:args]) : tool_use[:args].to_s
+        # 直接APIに送信するメッセージシーケンスを作成
+        [
+          # ユーザーからの質問（必須）
+          { role: 'user', content: messages.first['content'] },
+          
+          # アシスタントのツール呼び出し応答（必須）
+          {
+            role: 'assistant',
+            content: '',  # 空の文字列（必須）
+            tool_calls: [
+              {
+                id: tool_use[:id],
+                type: 'function',
+                function: {
+                  name: tool_use[:name],
+                  arguments: tool_use[:args].is_a?(Hash) ? JSON.generate(tool_use[:args]) : tool_use[:args].to_s
+                }
               }
-            }
-          ]
-        }
-
-        # ツール結果メッセージ
-        new_messages << {
-          'role' => 'tool',
-          'tool_call_id' => tool_use[:id],
-          'content' => result.to_s
-        }
-
-        new_messages
+            ]
+          },
+          
+          # ツール実行結果（必須）
+          {
+            role: 'tool',
+            tool_call_id: tool_use[:id],
+            content: result.to_s
+          }
+        ]
       end
 
       private
@@ -132,7 +144,7 @@ module MCP
         if tool_use
           {
             role: 'assistant',
-            content: nil,
+            content: '',
             tool_calls: [
               {
                 id: tool_use['id'],
