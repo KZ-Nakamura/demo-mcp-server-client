@@ -80,7 +80,7 @@ module MCP
         @logger.info('RPC: tools/list')
         tools = @tools.map do |name, tool|
           {
-            name:,
+            name: name,
             description: tool[:description],
             input_schema: tool[:input_schema]
           }

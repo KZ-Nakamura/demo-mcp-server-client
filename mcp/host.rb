@@ -1,20 +1,17 @@
 require 'dotenv'
-require 'anthropic'
 require 'json'
 require_relative 'client'
+require_relative 'llm_provider/factory'
 
 Dotenv.load
 
 module MCP
   class Host
-    attr_reader :client, :anthropic_client
+    attr_reader :client, :llm_provider
 
-    def initialize
+    def initialize(provider_name = nil, options = {})
       @client = MCP::Client.new(server_file_path)
-      @anthropic_client = Anthropic::Client.new(
-        access_token: ENV.fetch('ANTHROPIC_API_KEY', nil),
-        log_errors: true
-      )
+      @llm_provider = MCP::LLMProvider::Factory.create(provider_name, options)
     end
 
     def connect_to_server
@@ -23,9 +20,11 @@ module MCP
 
     def chat_loop
       puts 'MCP Client Started!'
-      puts "Type your queries 'exit' to exit."
+      puts "使用中のLLMプロバイダー: #{@llm_provider.class.name.split('::').last}"
+      puts "クエリを入力してください。終了するには 'exit' と入力。"
 
       loop do
+        print "> "
         input = $stdin.gets.chomp
         break if input.downcase == 'exit'
 
@@ -43,78 +42,81 @@ module MCP
     def process_query(query)
       messages = [
         {
-          'role': 'user',
-          'content': query
+          'role' => 'user',
+          'content' => query
         }
       ]
 
-      response = @client.list_tools
-      available_tools = response[:tools].map do |tool|
-        {
-          name: tool[:name],
-          description: tool[:description],
-          input_schema: tool[:input_schema]
-        }
-      end
-
-      response = @anthropic_client.messages(
-        parameters: {
-          model: 'claude-3-7-sonnet-20250219',
-          system: 'Respond only in Japanese.',
-          messages: messages,
-          max_tokens: 1000,
-          tools: available_tools
-        }
-      )
-
-      if response['content'].empty?
-        puts 'No response from the server'
-        return
-      end
-
-      final_text = []
-      assistant_message_content = []
-      response['content'].each do |content|
-        if content['type'] == 'text'
-          final_text << content['text']
-          assistant_message_content << content
-        elsif content['type'] == 'tool_use'
-          tool_name = content['name']
-          tool_args = content['input']
-
-          result = @client.call_tool(name: tool_name, args: tool_args)
-          final_text.push("[Calling tool #{tool_name} with args #{tool_args}]")
-
-          assistant_message_content.push(content)
-          messages.push({
-            'role': 'assistant',
-            'content': assistant_message_content
-          })
-          messages.push({
-            'role': 'user',
-            'content': [
-              {
-                'type': 'tool_result',
-                'tool_use_id': content['id'],
-                'content': result.to_s
-              }
-            ]
-          })
-
-          response = @anthropic_client.messages(
-            parameters: {
-              model: 'claude-3-7-sonnet-20250219',
-              max_tokens: 1000,
-              messages: messages,
-              tools: available_tools
-            }
-          )
-
-          final_text.push(response['content'][0]['text'])
+      begin
+        response = @client.list_tools
+        available_tools = response[:tools].map do |tool|
+          {
+            name: tool[:name],
+            description: tool[:description],
+            input_schema: tool[:input_schema]
+          }
         end
-      end
 
-      final_text.join("\n")
+        # LLMにメッセージを送信
+        response = @llm_provider.generate_message(
+          messages: messages,
+          tools: available_tools
+        )
+
+        final_text = []
+        
+        # テキスト応答の抽出
+        text = @llm_provider.extract_text(response)
+        final_text << text if text && !text.empty?
+
+        # ツール使用の抽出
+        tool_use = @llm_provider.extract_tool_use(response)
+        if tool_use
+          tool_name = tool_use[:name]
+          tool_args = tool_use[:args]
+
+          begin
+            result = @client.call_tool(name: tool_name, args: tool_args)
+            puts "ツール実行結果: #{result.inspect}"
+            final_text << "[ツール実行: #{tool_name}, パラメータ: #{tool_args}]"
+            final_text << "結果: #{result[:content]}"
+
+            begin
+              # ツール結果をLLMに送信するためのメッセージを作成
+              updated_messages = @llm_provider.create_tool_result_message(
+                messages: messages,
+                tool_use: tool_use,
+                result: result[:content]
+              )
+
+              # 結果を元にLLMから再度応答を取得
+              response = @llm_provider.generate_message(
+                messages: updated_messages, 
+                tools: []  # ツール使用後は通常の応答を期待
+              )
+
+              # 最終的なテキスト応答を追加
+              result_text = @llm_provider.extract_text(response)
+              final_text << result_text if result_text && !result_text.empty?
+            rescue => e
+              puts "2回目のAPI呼び出しでエラー: #{e.message}"
+              puts e.backtrace.join("\n")
+              # エラーが発生しても既に取得した結果を表示
+              final_text << "サイコロの結果は #{result[:content]} です。"
+            end
+          rescue => e
+            puts "ツール実行エラー: #{e.message}"
+            puts e.backtrace.join("\n")
+            final_text << "ツールの実行中にエラーが発生しました: #{e.message}"
+          end
+        end
+
+        final_text.join("\n")
+      rescue => e
+        puts "全体処理エラー: #{e.message}"
+        puts e.backtrace.join("\n")
+        "エラーが発生しました: #{e.message}"
+      end
     end
   end
 end
