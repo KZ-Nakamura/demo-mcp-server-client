@@ -7,7 +7,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test": "cross-env NODE_OPTIONS=\"--experimental-vm-modules --no-warnings\" jest --no-cache",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "clean": "rimraf dist",
@@ -36,8 +36,11 @@
     "@types/node": "^20.17.32",
     "@typescript-eslint/eslint-plugin": "^6.5.0",
     "@typescript-eslint/parser": "^6.5.0",
+    "cross-env": "^7.0.3",
     "eslint": "^8.48.0",
     "jest": "^29.6.4",
+    "jest-environment-node": "^29.6.4",
+    "jest-ts-webcompat-resolver": "^1.0.0",
     "rimraf": "^5.0.1",
     "ts-jest": "^29.1.1",
     "typescript": "^5.2.2"

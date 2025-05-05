@@ -1,12 +1,13 @@
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 export default {
-  preset: 'ts-jest/presets/js-with-ts-esm',
+  preset: 'ts-jest/presets/default-esm',
   testEnvironment: 'node',
   transform: {
     '^.+\\.tsx?$': [
       'ts-jest',
       {
         useESM: true,
+        tsconfig: 'tsconfig.json',
       },
     ],
   },
@@ -25,4 +26,8 @@ export default {
       statements: 10,
     },
   },
+  transformIgnorePatterns: [
+    'node_modules/(?!(ajv|ajv-formats)/)'
+  ],
+  resolver: 'jest-ts-webcompat-resolver',
 }; 
