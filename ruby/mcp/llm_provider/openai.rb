@@ -150,7 +150,7 @@ module MCP
 
       def get_log_file_path
         # logsディレクトリがなければ作成
-        log_dir = 'logs'
+        log_dir = File.expand_path('../../../../logs', __FILE__)
         FileUtils.mkdir_p(log_dir) unless Dir.exist?(log_dir)
         
         # OpenAI用のログファイル名
