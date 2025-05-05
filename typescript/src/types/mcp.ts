@@ -159,6 +159,8 @@ export type MCPRequest = MCPListToolsRequest | MCPCallToolRequest;
  */
 export interface MCPResponseBase extends MCPMessageBase {
   error?: string;
+  success?: boolean;
+  message?: string;
 }
 
 /**
