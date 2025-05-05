@@ -50,11 +50,17 @@ export interface ToolMessage extends Message {
  */
 export interface ToolCall {
   id: string;
-  type: 'function';
-  function: {
-    name: string;
-    arguments: string;
-  };
+  name: string;
+  arguments: Record<string, any>;
+}
+
+/**
+ * ツール呼び出しの結果
+ */
+export interface ToolResult {
+  toolCallId: string;
+  result?: any;
+  error?: string;
 }
 
 /**
@@ -95,4 +101,27 @@ export interface LLMResponse {
 export interface LLMStreamChunk {
   message: Partial<AssistantMessage | AssistantToolCallMessage>;
   isComplete: boolean;
+}
+
+/**
+ * LLMチャットリクエスト
+ */
+export interface LLMChatRequest {
+  messages: Message[];
+  tools?: any[];
+  toolResults?: ToolResult[];
+  options?: LLMRequestOptions;
+}
+
+/**
+ * LLMチャットレスポンス
+ */
+export interface LLMChatResponse {
+  message: string;
+  toolCalls?: ToolCall[];
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
 } 

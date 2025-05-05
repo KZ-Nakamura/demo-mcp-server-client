@@ -1,4 +1,4 @@
-import { LLMRequestOptions, LLMResponse, LLMStreamChunk, Message } from '../types/llm.js';
+import { LLMChatRequest, LLMChatResponse, LLMRequestOptions, LLMResponse, LLMStreamChunk, Message } from '../types/llm.js';
 
 /**
  * LLMプロバイダーインターフェース
@@ -28,6 +28,13 @@ export interface LLMProvider {
     options: LLMRequestOptions,
     onChunk: (chunk: LLMStreamChunk) => void
   ): Promise<void>;
+
+  /**
+   * LLMとチャットし、ツール呼び出しを含む応答を処理する
+   * @param request チャットリクエスト
+   * @returns チャットレスポンス
+   */
+  chat(request: LLMChatRequest): Promise<LLMChatResponse>;
 }
 
 /**
