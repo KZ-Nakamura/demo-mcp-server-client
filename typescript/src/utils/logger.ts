@@ -13,7 +13,7 @@ export class WinstonLogger implements Logger {
    */
   constructor(options: LoggerOptions = {}) {
     const {
-      level = LogLevel.Info,
+      level = 'info',
       filePath,
       format = 'simple',
       timestamp = true,
@@ -185,8 +185,7 @@ export class WinstonLogger implements Logger {
 
   // LogLevelを設定するメソッドを追加
   setLevel(level: LogLevel): void {
-    const winstonLevel = logLevelToWinstonLevel(level);
-    this.logger.level = winstonLevel;
+    this.logger.level = level;
   }
 }
 

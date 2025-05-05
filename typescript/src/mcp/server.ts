@@ -248,44 +248,74 @@ export class MCPServer {
     }
   };
 
-  // リクエストIDを取得する関数を追加
-  private getRequestId = (request: MCPRequest): string | undefined => {
-    return (request as any).id;
-  };
+  /**
+   * リクエストのIDを取得する
+   * @param request リクエスト
+   * @returns リクエストID
+   */
+  private getRequestId(request: MCPRequest): string {
+    if ('id' in request) {
+      return request.id;
+    }
+    return `req_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  }
 
-  // function_callリクエストを処理
+  /**
+   * 関数呼び出しを処理する
+   * 
+   * この関数は将来の拡張用途として残しておくが現在は使用しない
+   */
   async handleFunctionCall(request: MCPRequest): Promise<void> {
-    if (request.type !== 'function_call') return;
+    // 関数呼び出し以外は無視
+    if (!('type' in request) || request.type !== 'function_call') return;
 
     try {
-      const toolName = request.name;
-      const tool = this.tools.get(toolName);
-
-      if (!tool) {
-        throw new Error(`Unknown tool: ${toolName}`);
+      // ツール名を取得
+      if (!('name' in request)) {
+        throw new Error('Tool name is missing');
       }
-
-      let args;
+      const toolName = request.name as string;
+      
+      // 引数を解析
+      let args: Record<string, any> = {};
       try {
-        args = JSON.parse(request.arguments);
+        if ('arguments' in request) {
+          args = JSON.parse(request.arguments as string);
+        }
       } catch (error) {
-        throw new Error(`Invalid JSON in arguments: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`Invalid arguments: ${error instanceof Error ? error.message : String(error)}`);
       }
-
-      const result = await tool.handler(args);
-      this.sendResponse({
-        type: 'function_call_response',
-        name: toolName,
-        content: JSON.stringify(result),
-        id: this.getRequestId(request),
-      });
+      
+      // ツールを実行
+      try {
+        const result = await this.callTool(toolName, args);
+        
+        // 成功レスポンスを送信
+        const response: MCPCallToolResponse = {
+          id: this.getRequestId(request),
+          output: result
+        };
+        this.sendResponse(response);
+      } catch (error) {
+        // エラーレスポンスを送信
+        const response: MCPCallToolResponse = {
+          id: this.getRequestId(request),
+          output: null,
+          error: `Error calling tool: ${error instanceof Error ? error.message : String(error)}`
+        };
+        this.sendResponse(response);
+      }
     } catch (error) {
-      this.sendResponse({
-        type: 'function_call_response',
-        name: request.name,
-        error: error instanceof Error ? error.message : String(error),
+      // 予期しないエラー
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      defaultLogger.error(`Function call error: ${errorMessage}`);
+      
+      const response: MCPCallToolResponse = {
         id: this.getRequestId(request),
-      });
+        error: `Function call error: ${errorMessage}`,
+        output: null
+      };
+      this.sendResponse(response);
     }
   }
 } 

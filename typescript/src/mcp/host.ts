@@ -4,7 +4,16 @@ import { defaultLogger } from '../utils/logger.js';
 import { LLMProvider } from '../interfaces/llm-provider.js';
 import { MCPClient } from './client.js';
 import { ToolInfo } from '../types/tools.js';
-import { LLMChatRequest, LLMChatResponse, LLMMessage } from '../types/llm.js';
+import { 
+  LLMChatRequest, 
+  LLMChatResponse, 
+  LLMMessage, 
+  LLMOptions, 
+  LLMMessageRole,
+  Message,
+  ToolMessage,
+  ToolCall
+} from '../types/llm.js';
 
 interface FunctionCall {
   name: string;
@@ -228,72 +237,54 @@ ${results.map(r => {
     const llmRequest = this.prepareLLMRequest(request);
     
     // LLMからの応答を取得
-    let llmResponse = await this.llmProvider.chat(llmRequest);
-    
-    // ツール呼び出しを処理
-    let toolCallCount = 0;
-    const maxToolCalls = 10; // 無限ループ防止のための最大ツール呼び出し回数
-    
-    while (llmResponse.toolCalls && llmResponse.toolCalls.length > 0 && toolCallCount < maxToolCalls) {
-      this.logger.debug(`Processing ${llmResponse.toolCalls.length} tool calls`);
-      
-      // ツール呼び出しの結果を格納する配列
-      const toolResults = [];
-      
-      // 各ツール呼び出しを処理
-      for (const toolCall of llmResponse.toolCalls) {
-        try {
-          const result = await this.processToolCall(toolCall);
-          toolResults.push({
-            toolCallId: toolCall.id,
-            result
-          });
-        } catch (error) {
-          this.logger.error(`Error processing tool call: ${error instanceof Error ? error.message : String(error)}`);
-          toolResults.push({
-            toolCallId: toolCall.id,
-            error: `Error: ${error instanceof Error ? error.message : String(error)}`
-          });
-        }
-      }
-      
-      // LLMに結果を送信して続きを取得
-      llmResponse = await this.llmProvider.chat({
-        ...llmRequest,
-        toolResults
-      });
-      
-      toolCallCount++;
+    const options: LLMOptions = {};
+    if (llmRequest.options) {
+      if (llmRequest.options.temperature) options.temperature = llmRequest.options.temperature;
+      if (llmRequest.options.maxTokens) options.maxTokens = llmRequest.options.maxTokens;
     }
     
-    if (toolCallCount >= maxToolCalls) {
-      this.logger.warn(`Reached maximum tool call limit (${maxToolCalls})`);
-    }
+    const llmResponse = await this.llmProvider.sendMessage(
+      this.convertToLLMMessages(llmRequest.messages),
+      options
+    );
     
-    return llmResponse;
+    // ツール呼び出しを検出
+    const functionCalls = this.extractFunctionCalls(llmResponse);
+    
+    // FunctionCallをToolCallに変換
+    const toolCalls: ToolCall[] = functionCalls ? functionCalls.map(fc => ({
+      id: `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      name: fc.name,
+      arguments: fc.arguments
+    })) : [];
+    
+    return {
+      message: llmResponse,
+      toolCalls
+    };
   }
 
   /**
-   * ツール呼び出しを処理する
-   * @param toolCall LLMからのツール呼び出し
-   * @returns ツール呼び出しの結果
+   * 通常のメッセージをLLMメッセージに変換
    */
-  private async processToolCall(toolCall: { id: string; name: string; arguments: Record<string, any> }): Promise<any> {
-    const { name, arguments: args } = toolCall;
-    
-    this.logger.debug(`Processing tool call for '${name}' with args: ${JSON.stringify(args)}`);
-    
-    // ツールが利用可能か確認
-    const toolExists = this.availableTools.some(tool => tool.name === name);
-    if (!toolExists) {
-      throw new Error(`Tool '${name}' not found in available tools`);
-    }
-    
-    // ツールを呼び出す
-    const result = await this.client.callTool(name, args);
-    this.logger.debug(`Tool '${name}' returned: ${JSON.stringify(result)}`);
-    
-    return result;
+  private convertToLLMMessages(messages: Message[]): LLMMessage[] {
+    return messages.map(msg => {
+      // ツールメッセージを関数メッセージに変換
+      if (msg.role === 'tool') {
+        const toolMsg = msg as ToolMessage;
+        return {
+          role: 'function',
+          content: msg.content,
+          name: toolMsg.toolName
+        };
+      }
+      
+      // その他のメッセージをそのまま変換（役割は互換性あり）
+      return {
+        role: msg.role as LLMMessageRole,
+        content: msg.content
+      };
+    });
   }
 
   /**

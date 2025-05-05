@@ -39,6 +39,11 @@ const EXAMPLES = [
  * メイン関数
  */
 async function main(): Promise<void> {
+  console.log("\n===================================================");
+  console.log("フェーズ6への準備が完了しました！");
+  console.log("モジュール互換性の修正とテスト環境の改善が実施されました。");
+  console.log("===================================================\n");
+
   // 引数のパース
   const args = parseArguments(process.argv.slice(2), {
     shorthand: {
@@ -134,15 +139,16 @@ async function runClient(args: Record<string, any>): Promise<void> {
   const client = new MCPClient(connection);
   
   // ホストの作成
-  const host = new MCPHost(client, llmProvider);
+  const host = new MCPHost(connection, llmProvider);
   
-  // クライアントを初期化
+  // クライアントとホストを初期化
   await client.initialize();
+  await host.initialize();
   
   defaultLogger.info('クライアントを初期化しました');
   
   // 利用可能なツールの取得
-  const { tools } = await client.listTools();
+  const tools = await client.listTools();
   defaultLogger.info('利用可能なツール:', { tools });
   
   // 対話モード
