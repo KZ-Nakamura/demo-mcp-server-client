@@ -3,6 +3,25 @@
  */
 
 /**
+ * LLMの応答フォーマット
+ */
+export type LLMResponseFormat = 'text' | 'json';
+
+/**
+ * LLMメッセージの役割
+ */
+export type LLMMessageRole = 'system' | 'user' | 'assistant' | 'function';
+
+/**
+ * LLMメッセージ
+ */
+export interface LLMMessage {
+  role: LLMMessageRole;
+  content: string;
+  name?: string; // 関数呼び出し時のみ使用
+}
+
+/**
  * メッセージの役割
  */
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool';
@@ -124,4 +143,28 @@ export interface LLMChatResponse {
     completionTokens: number;
     totalTokens: number;
   };
+}
+
+/**
+ * LLM呼び出しオプション
+ */
+export interface LLMOptions {
+  /**
+   * 温度パラメータ (0.0-1.0)
+   * 高いほど多様な応答、低いほど確定的な応答
+   * @default 0.7
+   */
+  temperature?: number;
+  
+  /**
+   * 応答フォーマット
+   * @default 'text'
+   */
+  responseFormat?: LLMResponseFormat;
+  
+  /**
+   * 最大トークン数
+   * @default プロバイダーに依存
+   */
+  maxTokens?: number;
 } 

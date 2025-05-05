@@ -1,40 +1,21 @@
-import { LLMChatRequest, LLMChatResponse, LLMRequestOptions, LLMResponse, LLMStreamChunk, Message } from '../types/llm.js';
+import { LLMMessage, LLMOptions } from '../types/llm.js';
 
 /**
  * LLMプロバイダーインターフェース
  */
 export interface LLMProvider {
   /**
-   * プロバイダー名を取得
+   * プロバイダー名
    */
   readonly name: string;
 
   /**
-   * LLMにメッセージを送信し、応答を取得する
-   * @param messages これまでの会話の履歴
-   * @param options リクエストオプション
-   * @returns LLMからの応答
+   * メッセージを送信してLLMから応答を得る
+   * @param messages 送信するメッセージの配列
+   * @param options LLM呼び出しオプション
+   * @returns LLMからの応答テキスト
    */
-  sendMessage(messages: Message[], options?: LLMRequestOptions): Promise<LLMResponse>;
-
-  /**
-   * LLMにメッセージを送信し、ストリーミングで応答を取得する
-   * @param messages これまでの会話の履歴
-   * @param options リクエストオプション（streamはtrueになる）
-   * @param onChunk ストリーミングチャンクを受信するたびに呼び出されるコールバック
-   */
-  sendMessageStream(
-    messages: Message[],
-    options: LLMRequestOptions,
-    onChunk: (chunk: LLMStreamChunk) => void
-  ): Promise<void>;
-
-  /**
-   * LLMとチャットし、ツール呼び出しを含む応答を処理する
-   * @param request チャットリクエスト
-   * @returns チャットレスポンス
-   */
-  chat(request: LLMChatRequest): Promise<LLMChatResponse>;
+  sendMessage(messages: LLMMessage[], options?: LLMOptions): Promise<string>;
 }
 
 /**
