@@ -40,12 +40,7 @@ export interface Logger {
 /**
  * ロガーのレベル
  */
-export enum LogLevel {
-  Debug = 'debug',
-  Info = 'info',
-  Warn = 'warn',
-  Error = 'error',
-}
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 /**
  * ロガーの設定オプション

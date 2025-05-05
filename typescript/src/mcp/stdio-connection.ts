@@ -13,11 +13,16 @@ export class StdioConnection implements Connection {
 
   /**
    * 標準入出力接続を初期化
+   * @param input 入力ストリーム（デフォルトはprocess.stdin）
+   * @param output 出力ストリーム（デフォルトはprocess.stdout）
    */
-  constructor() {
+  constructor(
+    private readonly input = process.stdin,
+    private readonly output = process.stdout
+  ) {
     this.readline = createInterface({
-      input: process.stdin,
-      output: process.stdout,
+      input: this.input,
+      output: this.output,
       terminal: false
     });
 
@@ -92,7 +97,7 @@ export class StdioConnection implements Connection {
     }
 
     defaultLogger.debug('送信メッセージ:', { message });
-    process.stdout.write(`${message}\n`);
+    this.output.write(`${message}\n`);
   }
 
   /**

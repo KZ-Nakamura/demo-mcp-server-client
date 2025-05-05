@@ -1,6 +1,8 @@
+import { Connection } from '../interfaces/connection.js';
 import { MCPServer } from '../mcp/server.js';
 import { StdioConnection } from '../mcp/stdio-connection.js';
 import { defaultLogger } from '../utils/logger.js';
+import { BaseTool } from '../tools/base-tool.js';
 import { DiceTool } from '../tools/dice.js';
 import { CurrentTimeTool } from '../tools/current-time.js';
 
@@ -12,8 +14,9 @@ export class MultiToolsServer {
   
   /**
    * コンストラクタ
+   * @param tools 提供するツール（デフォルトは組み込みツール）
    */
-  constructor() {
+  constructor(tools?: BaseTool[]) {
     // 標準入出力を使用した接続を作成
     const connection = new StdioConnection();
     
@@ -21,13 +24,17 @@ export class MultiToolsServer {
     this.server = new MCPServer(connection, defaultLogger);
     
     // ツールを登録
-    this.registerTools();
+    if (tools && tools.length > 0) {
+      this.registerCustomTools(tools);
+    } else {
+      this.registerDefaultTools();
+    }
   }
   
   /**
-   * ツールを登録する
+   * デフォルトツールを登録する
    */
-  private registerTools(): void {
+  private registerDefaultTools(): void {
     // サイコロツール
     const diceTool = new DiceTool();
     this.server.registerTool(diceTool);
@@ -35,6 +42,15 @@ export class MultiToolsServer {
     // 現在時刻ツール
     const timeTool = new CurrentTimeTool();
     this.server.registerTool(timeTool);
+  }
+  
+  /**
+   * カスタムツールを登録する
+   */
+  private registerCustomTools(tools: BaseTool[]): void {
+    for (const tool of tools) {
+      this.server.registerTool(tool);
+    }
   }
   
   /**
@@ -58,5 +74,17 @@ export class MultiToolsServer {
     } catch (error) {
       console.error('Failed to stop server:', error);
     }
+  }
+
+  /**
+   * 指定された接続を使用してサーバーを実行する
+   * @param connection 使用する接続
+   */
+  async run(connection: Connection): Promise<void> {
+    // 新しい接続を使用してサーバーを作成
+    this.server = new MCPServer(connection, defaultLogger);
+    
+    // サーバーを開始
+    return this.server.start();
   }
 } 
