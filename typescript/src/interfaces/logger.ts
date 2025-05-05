@@ -29,6 +29,12 @@ export interface Logger {
    * @param meta 追加情報
    */
   error(message: string, ...meta: any[]): void;
+
+  /**
+   * ログレベルを設定
+   * @param level 設定するログレベル
+   */
+  setLevel(level: LogLevel): void;
 }
 
 /**
