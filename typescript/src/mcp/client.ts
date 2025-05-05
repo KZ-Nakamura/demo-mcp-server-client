@@ -123,6 +123,33 @@ export class MCPClient {
    */
   private parseResponse<T extends MCPResponse>(responseStr: string): T {
     try {
+      // JSONオブジェクトかどうかを確認
+      const trimmed = responseStr.trim();
+      if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+        // JSONでない場合はプレーンテキストとして扱い、適切なレスポンス形式にラップ
+        this.logger.info('非JSONレスポンスを処理します:', { responseStr });
+        
+        // リクエストに対応するレスポンス型を推測
+        const isToolCallResponse = 'output' in ({} as T);
+        
+        if (isToolCallResponse) {
+          // ツール呼び出しの場合
+          return {
+            id: `resp_${Date.now()}`,
+            success: true,
+            output: responseStr
+          } as unknown as T;
+        } else {
+          // その他の場合（デフォルト）
+          return {
+            id: `resp_${Date.now()}`,
+            success: true,
+            message: responseStr
+          } as unknown as T;
+        }
+      }
+      
+      // 通常のJSONパース
       const response = JSON.parse(responseStr) as T;
       
       if (!response || typeof response !== 'object') {

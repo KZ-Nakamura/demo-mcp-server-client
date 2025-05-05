@@ -37,6 +37,46 @@ cp .env.example .env
 
 ## 使い方
 
+### コマンドラインでの実行方法
+
+ビルド済みのコードを使ってコマンドラインから実行する方法：
+
+```bash
+# ビルド
+npm run build
+
+# ヘルプを表示
+node dist/main.js --help
+
+# サーバーモードで実行（ツールサーバーを起動）
+node dist/main.js --server
+
+# クライアントモードで実行（対話モード）
+node dist/main.js
+
+# デバッグモードで実行（詳細なログ出力）
+node dist/main.js --debug
+
+# 特定のLLMプロバイダーを指定して実行
+node dist/main.js --llm-provider openai
+```
+
+**重要**: クライアントモードは、別ターミナルでサーバーモードを実行している状態で使用してください。
+
+```bash
+# ターミナル1でサーバーを起動
+node dist/main.js --server
+
+# ターミナル2でクライアントを起動
+node dist/main.js
+```
+
+または、サンプル実装（サーバーとクライアントを1つのプロセスで起動）を使用することも可能です：
+
+```bash
+node dist/example.js
+```
+
 ### サーバーの起動
 
 サーバーを起動して、ツールを提供します：
