@@ -99,6 +99,7 @@ export interface MCPCallToolParams {
  */
 export interface MCPCallToolResult {
   output: any;
+  content: any;
 }
 
 /**
