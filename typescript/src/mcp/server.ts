@@ -191,7 +191,7 @@ export class MCPServer {
         return await this.handleCallTool(request as MCPCallToolRequest);
       default:
         return {
-          id: request.id,
+          id: this.getRequestId(request),
           error: `Unknown action: ${(request as any).action}`
         } as MCPResponse;
     }
