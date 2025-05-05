@@ -12,10 +12,10 @@ ruby/.env
 ruby/tmp/
 
 # TypeScript固有
-typescript/node_modules/
-typescript/dist/
-typescript/.env
-typescript/coverage/
+wip-typescript/node_modules/
+wip-typescript/dist/
+wip-typescript/.env
+wip-typescript/coverage/
 
 # See https://help.github.com/articles/ignoring-files for more about ignoring files.
 #
@@ -61,7 +61,7 @@ tokens.rb
 .env
 
 # TypeScript build output
-typescript/dist
+wip-typescript/dist
 
 # TypeScript coverage reports
-typescript/coverage
+wip-typescript/coverage
