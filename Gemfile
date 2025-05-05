@@ -6,6 +6,7 @@ ruby '3.3.1'
 
 gem 'dotenv'
 gem 'ruby-anthropic'
+gem 'ruby-openai'
 
 group :development do
   gem 'rubocop'

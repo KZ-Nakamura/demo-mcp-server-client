@@ -52,6 +52,10 @@ GEM
       prism (>= 1.2, < 2.0)
       rbs (>= 3, < 4)
       sorbet-runtime (>= 0.5.10782)
+    ruby-openai (8.1.0)
+      event_stream_parser (>= 0.3.0, < 2.0.0)
+      faraday (>= 1)
+      faraday-multipart (>= 1)
     ruby-progressbar (1.13.0)
     sorbet-runtime (0.5.12032)
     unicode-display_width (3.1.4)
@@ -68,6 +72,7 @@ DEPENDENCIES
   rubocop
   ruby-anthropic
   ruby-lsp
+  ruby-openai
 
 RUBY VERSION
    ruby 3.3.1p55
