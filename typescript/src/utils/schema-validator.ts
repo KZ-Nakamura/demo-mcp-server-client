@@ -1,37 +1,33 @@
-import Ajv from 'ajv';
-import addFormats from 'ajv-formats';
+// CommonJSスタイルでAjvモジュールをインポート
+const Ajv = require('ajv');
+const addFormats = require('ajv-formats');
 import { ToolInputValidationError } from '../types/tools.js';
 
-// Ajvインスタンスを作成し、フォーマットを追加
+// Ajvインスタンスの作成
 const ajv = new Ajv({ allErrors: true });
 addFormats(ajv);
 
 /**
- * 入力値をJSONスキーマに対して検証する
- * @param schema JSONスキーマ
- * @param input 検証する入力値
- * @throws {ToolInputValidationError} 検証に失敗した場合
+ * JSONスキーマを使用して入力データを検証する
+ * @param schema 検証に使用するJSONスキーマ
+ * @param data 検証する入力データ
+ * @throws {ToolInputValidationError} 検証エラーが発生した場合
  */
-export async function validateInput(schema: Record<string, any>, input: any): Promise<void> {
-  try {
-    const validate = ajv.compile(schema);
-    const valid = validate(input);
+export function validateSchema(schema: object, data: unknown): void {
+  const validate = ajv.compile(schema);
+  const valid = validate(data);
+  
+  if (!valid) {
+    const errors = validate.errors || [];
+    const errorMessages = errors.map((err: any) => 
+      `${err.instancePath} ${err.message}`
+    ).join('; ');
     
-    if (!valid) {
-      const errors = validate.errors || [];
-      throw new ToolInputValidationError(
-        'Input validation failed',
-        errors
-      );
-    }
-  } catch (error) {
-    if (error instanceof ToolInputValidationError) {
-      throw error;
-    }
-    
-    throw new ToolInputValidationError(
-      `Schema validation error: ${error instanceof Error ? error.message : String(error)}`,
-      []
-    );
+    throw new ToolInputValidationError(`入力検証エラー: ${errorMessages}`, errors);
   }
+}
+
+// 後方互換性のために残しておく
+export async function validateInput(schema: Record<string, any>, input: any): Promise<void> {
+  return validateSchema(schema, input);
 } 
