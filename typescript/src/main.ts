@@ -1,90 +1,98 @@
 #!/usr/bin/env node
 
-import { parseArguments, showHelp, exitWithError } from './utils/cli.js';
-import { StdioConnection } from './mcp/stdio-connection.js';
-import { MCPClient } from './mcp/client.js';
-import { LLMProviderFactory } from './llm-provider/factory.js';
-import { MCPHost } from './mcp/host.js';
-import { MultiToolsServer } from './servers/multi-tools-server.js';
+import { config } from './config.js';
+import { defaultLogger } from './utils/logger.js';
+import { MCPServer } from './mcp/server.js';
 import { BaseTool } from './tools/base-tool.js';
 import { DiceTool } from './tools/dice.js';
 import { CurrentTimeTool } from './tools/current-time.js';
-import { config } from './config.js';
-import { defaultLogger } from './utils/logger.js';
+import { StdioConnection } from './mcp/stdio-connection.js';
+import { MCPHost } from './mcp/host.js';
+import { LogLevel } from './interfaces/logger.js';
+import { LLMProviderFactory } from './llm-provider/factory.js';
+import { parseArgs } from 'node:util';
 
 // プログラム名
-const PROGRAM_NAME = 'mcp-client';
+const PROGRAM_NAME = 'mcp';
 
 // プログラムの説明
-const DESCRIPTION = 'MCP (Machine-Readable Communication Protocol) Client';
+const PROGRAM_DESCRIPTION = 'Model Context Protocol の実装';
 
-// コマンドラインオプション
-const OPTIONS = [
-  { name: '--help, -h', description: 'ヘルプを表示する' },
-  { name: '--debug, -d', description: 'デバッグモードを有効にする' },
-  { name: '--server, -s', description: 'サーバーモードで実行する' },
-  { name: '--llm-provider', description: 'LLMプロバイダーを指定する', default: config.preferredLlmProvider },
-  { name: '--log-level', description: 'ログレベルを指定する', default: config.logLevel }
-];
+// ヘルプテキスト
+const HELP_TEXT = `
+使い方: ${PROGRAM_NAME} [オプション]
 
-// 使用例
-const EXAMPLES = [
-  `${PROGRAM_NAME} --help`,
-  `${PROGRAM_NAME} --debug`,
-  `${PROGRAM_NAME} --server`,
-  `${PROGRAM_NAME} --llm-provider openai`
-];
+オプション:
+  --server               サーバーモードで起動します
+  --client               クライアントモードで起動します (デフォルト)
+  --llm-provider <name>  LLMプロバイダーを指定します (デフォルト: ${config.preferredLlmProvider})
+  --debug                デバッグモードで起動します
+  --help                 このヘルプを表示します
+
+例:
+  サーバーモードで起動:
+    ${PROGRAM_NAME} --server
+  
+  クライアントモードで起動:
+    ${PROGRAM_NAME} --client
+  
+  特定のLLMプロバイダーを使用:
+    ${PROGRAM_NAME} --client --llm-provider=openai
+`;
+
+// コマンドライン引数のパース
+function parseArguments(): Record<string, any> {
+  const options = {
+    server: { type: 'boolean' as const },
+    client: { type: 'boolean' as const },
+    'llm-provider': { type: 'string' as const, default: config.preferredLlmProvider },
+    debug: { type: 'boolean' as const },
+    help: { type: 'boolean' as const }
+  };
+
+  try {
+    const { values } = parseArgs({ options });
+    return values;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`引数解析エラー: ${errorMessage}`);
+    console.error(HELP_TEXT);
+    process.exit(1);
+  }
+}
 
 /**
  * メイン関数
  */
 async function main(): Promise<void> {
-  console.log("\n===================================================");
-  console.log("フェーズ6への準備が完了しました！");
-  console.log("モジュール互換性の修正とテスト環境の改善が実施されました。");
-  console.log("===================================================\n");
-
-  // 引数のパース
-  const args = parseArguments(process.argv.slice(2), {
-    shorthand: {
-      h: 'help',
-      d: 'debug',
-      s: 'server'
-    },
-    defaults: {
-      'llm-provider': config.preferredLlmProvider,
-      'log-level': config.logLevel
-    },
-    collectPositional: true
-  });
+  // 引数の解析
+  const args = parseArguments();
   
-  // ヘルプ表示
+  // ヘルプの表示
   if (args.help) {
-    showHelp(PROGRAM_NAME, DESCRIPTION, OPTIONS, EXAMPLES);
+    console.log(HELP_TEXT);
     process.exit(0);
   }
   
-  // ログレベルの設定
-  defaultLogger.setLevel(args['log-level'] || 'info');
-  
-  // デバッグモード
+  // デバッグモードの設定
   if (args.debug) {
     defaultLogger.setLevel('debug');
-    defaultLogger.debug('デバッグモードが有効になりました');
+    defaultLogger.debug('デバッグモードで起動します');
   }
   
-  try {
-    // サーバーモード
-    if (args.server) {
-      await runServer();
-    } else {
-      // クライアントモード（デフォルト）
-      await runClient(args);
-    }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    defaultLogger.error(`実行エラー: ${errorMessage}`);
-    exitWithError(errorMessage);
+  // モードの決定（サーバーかクライアントか）
+  const serverMode = args.server ?? false;
+  const clientMode = args.client ?? (!serverMode);
+  
+  // サーバーモードかクライアントモードのどちらか
+  if (serverMode) {
+    await runServer();
+  } else if (clientMode) {
+    await runClient(args);
+  } else {
+    console.error('サーバーモードかクライアントモードのどちらかを指定してください');
+    console.error(HELP_TEXT);
+    process.exit(1);
   }
 }
 
@@ -100,14 +108,20 @@ async function runServer(): Promise<void> {
     new CurrentTimeTool()
   ];
   
-  // マルチツールサーバーの作成
-  const server = new MultiToolsServer(tools);
-  
   // 標準入出力接続
   const connection = new StdioConnection();
   
+  // サーバーを作成
+  const server = new MCPServer(connection);
+  
+  // ツールを登録
+  for (const tool of tools) {
+    server.registerTool(tool);
+  }
+  
   // サーバーの開始
-  defaultLogger.info('利用可能なツール:', { tools: tools.map(t => t.name) });
+  const toolNames = tools.map(t => t.name).join(', ');
+  defaultLogger.info(`利用可能なツール: ${toolNames}`);
   defaultLogger.info('サーバーを起動しました。Ctrl+Cで終了します。');
   
   // シグナルハンドラの登録
@@ -117,7 +131,7 @@ async function runServer(): Promise<void> {
   });
   
   // サーバーを実行
-  await server.run(connection);
+  await server.start();
 }
 
 /**
@@ -132,57 +146,77 @@ async function runClient(args: Record<string, any>): Promise<void> {
   
   const llmProvider = LLMProviderFactory.create(llmProviderType);
   
-  // 標準入出力接続
+  // 単一の標準入出力接続を作成（ホストとクライアントで共有）
   const connection = new StdioConnection();
   
-  // クライアントの作成
-  const client = new MCPClient(connection);
+  // 対話状態を管理
+  let waitingForUserInput = false;
+  let userInputResolve: ((value: string) => void) | null = null;
+  
+  // カスタムの標準入力ハンドラ
+  const originalStdinListener = process.stdin.listeners('data')[0];
+  if (originalStdinListener) {
+    process.stdin.removeListener('data', originalStdinListener as (...args: any[]) => void);
+  }
+  
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (chunk: Buffer) => {
+    const input = chunk.toString().trim();
+    
+    if (waitingForUserInput && userInputResolve) {
+      // ユーザーの入力を待っていた場合
+      waitingForUserInput = false;
+      userInputResolve(input);
+      userInputResolve = null;
+    } else {
+      // それ以外の場合はデフォルト処理
+      if (input.toLowerCase() === 'exit') {
+        console.log('クライアントを終了します...');
+        process.exit(0);
+      }
+    }
+  });
   
   // ホストの作成
   const host = new MCPHost(connection, llmProvider);
   
-  // クライアントとホストを初期化
-  await client.initialize();
+  // ホストを初期化
   await host.initialize();
-  
-  defaultLogger.info('クライアントを初期化しました');
-  
-  // 利用可能なツールの取得
-  const tools = await client.listTools();
-  defaultLogger.info('利用可能なツール:', { tools });
   
   // 対話モード
   console.log('\nMCPクライアントを起動しました。メッセージを入力してください（終了するには「exit」と入力）:');
   
-  process.stdin.setEncoding('utf8');
-  process.stdin.on('data', async (data: Buffer) => {
-    const input = data.toString().trim();
+  // メインループ
+  while (true) {
+    process.stdout.write('> ');
     
-    if (input.toLowerCase() === 'exit') {
+    // ユーザー入力を待機
+    const userInput = await new Promise<string>((resolve) => {
+      waitingForUserInput = true;
+      userInputResolve = resolve;
+    });
+    
+    if (userInput.toLowerCase() === 'exit') {
       console.log('クライアントを終了します...');
-      process.exit(0);
+      break;
     }
     
     try {
       console.log('\n処理中...');
-      const response = await host.chat(input);
+      const response = await host.chat(userInput);
       console.log(`\n${response}\n`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(`エラー: ${errorMessage}\n`);
     }
-    
-    // プロンプト表示
-    process.stdout.write('> ');
-  });
+  }
   
-  // 初期プロンプト
-  process.stdout.write('> ');
+  process.exit(0);
 }
 
-// メイン関数の実行
+// プログラムの実行
 main().catch(error => {
   const errorMessage = error instanceof Error ? error.message : String(error);
-  console.error(`致命的なエラー: ${errorMessage}`);
+  console.error(`エラー: ${errorMessage}`);
   process.exit(1);
 }); 
