@@ -8,7 +8,8 @@ module MCP
 
     def initialize(server_file_path)
       # TODO: とりあえずrubyのMCPサーバーのみ対応
-      @stdin, @stdout, @stderr, @wait_thr = Open3.popen3("ruby #{server_file_path}")
+      server_path = File.expand_path(server_file_path, File.dirname(__FILE__))
+      @stdin, @stdout, @stderr, @wait_thr = Open3.popen3("ruby #{server_path}")
       @pid = @wait_thr.pid
       Thread.new do
         loop do

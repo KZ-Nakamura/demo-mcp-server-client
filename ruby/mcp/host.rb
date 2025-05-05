@@ -44,11 +44,12 @@ module MCP
 
     def setup_logger
       # logsディレクトリがなければ作成
-      FileUtils.mkdir_p('logs') unless Dir.exist?('logs')
+      log_dir = File.expand_path('../../logs', __FILE__)
+      FileUtils.mkdir_p(log_dir) unless Dir.exist?(log_dir)
       
       # 日時を含むログファイル名を生成
       timestamp = Time.now.strftime('%Y%m%d_%H%M%S')
-      @log_file_path = "logs/mcp_#{timestamp}.log"
+      @log_file_path = "#{log_dir}/mcp_#{timestamp}.log"
       
       # ロガーを設定
       @logger = Logger.new(@log_file_path)
@@ -60,7 +61,7 @@ module MCP
 
     # TODO: とりあえずMCPサーバー1つだけしか指定できないようにする
     def server_file_path
-      'mcp/multi_tools/server.rb'
+      File.join(File.dirname(__FILE__), 'multi_tools/server.rb')
     end
 
     def process_query(query)

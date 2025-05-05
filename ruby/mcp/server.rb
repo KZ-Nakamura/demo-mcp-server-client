@@ -9,7 +9,8 @@ module MCP
     def initialize
       @connection = StdioConnection.new
       @initialized = false
-      @logger = Logger.new('tmp/mcp.log')
+      log_dir = File.expand_path('../../logs', __dir__)
+      @logger = Logger.new("#{log_dir}/mcp_server.log")
       @tools ||= {}
     end
 

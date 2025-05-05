@@ -1,5 +1,9 @@
 require 'optparse'
+require 'dotenv'
 require_relative 'mcp/host'
+
+# 環境変数をロード
+Dotenv.load
 
 def parse_options
   options = {}
