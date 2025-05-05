@@ -227,7 +227,7 @@ async function runClient(args: Record<string, any>): Promise<void> {
  * 自然言語対話モードでの実行
  */
 async function runChat(args: Record<string, any>): Promise<void> {
-  defaultLogger.info('自然言語対話モードで起動します');
+  defaultLogger.info('自然言語対話モードを起動します');
   
   // LLMプロバイダーの生成
   const llmProviderType = args['llm-provider'];
@@ -235,8 +235,14 @@ async function runChat(args: Record<string, any>): Promise<void> {
   
   const llmProvider = LLMProviderFactory.create(llmProviderType);
   
-  // 自然言語CLIの作成
-  const cli = new NaturalLanguageCLI(llmProvider);
+  // ツールの準備
+  const tools: BaseTool[] = [
+    new DiceTool(),
+    new CurrentTimeTool()
+  ];
+  
+  // 自然言語CLIの作成（シンプルモード）
+  const cli = new NaturalLanguageCLI(llmProvider, defaultLogger);
   
   // シグナルハンドラの登録
   process.on('SIGINT', async () => {
@@ -244,6 +250,12 @@ async function runChat(args: Record<string, any>): Promise<void> {
     await cli.stop();
     process.exit(0);
   });
+  
+  // 注意メッセージ
+  defaultLogger.info('注: --chat モードの現在のバージョンではツール連携は利用できません');
+  console.log('\n注意: 現在のバージョンではツール連携機能は利用できません。');
+  console.log('開発中のフェーズ6.75で実装される予定です。');
+  console.log('シンプルな自然言語対話モードで実行します。\n');
   
   // CLIを実行
   await cli.start();
