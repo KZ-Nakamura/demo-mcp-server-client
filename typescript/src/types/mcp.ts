@@ -113,4 +113,83 @@ export enum MCPErrorCode {
   ToolNotFound = -32000,
   ToolExecutionError = -32001,
   InvalidToolInput = -32002,
+}
+
+/**
+ * MCP統合プロトコル用の型定義
+ */
+
+/**
+ * MCPメッセージのベース
+ */
+export interface MCPMessageBase {
+  id: string;
+}
+
+/**
+ * MCPリクエスト共通部分
+ */
+export interface MCPRequestBase extends MCPMessageBase {
+  action: string;
+}
+
+/**
+ * ツール一覧取得リクエスト
+ */
+export interface MCPListToolsRequest extends MCPRequestBase {
+  action: 'list_tools';
+}
+
+/**
+ * ツール呼び出しリクエスト
+ */
+export interface MCPCallToolRequest extends MCPRequestBase {
+  action: 'call_tool';
+  tool_name: string;
+  inputs: Record<string, any>;
+}
+
+/**
+ * MCPリクエスト型
+ */
+export type MCPRequest = MCPListToolsRequest | MCPCallToolRequest;
+
+/**
+ * MCPレスポンス共通部分
+ */
+export interface MCPResponseBase extends MCPMessageBase {
+  error?: string;
+}
+
+/**
+ * ツール一覧取得レスポンス
+ */
+export interface MCPListToolsResponse extends MCPResponseBase {
+  tools: ToolInfo[];
+}
+
+/**
+ * ツール呼び出しレスポンス
+ */
+export interface MCPCallToolResponse extends MCPResponseBase {
+  output: any;
+}
+
+/**
+ * MCPレスポンス型
+ */
+export type MCPResponse = MCPListToolsResponse | MCPCallToolResponse;
+
+/**
+ * MCPメッセージ型（リクエストまたはレスポンス）
+ */
+export type MCPMessage = MCPRequest | MCPResponse;
+
+/**
+ * ツール情報の型
+ */
+export interface ToolInfo {
+  name: string;
+  description: string;
+  input_schema: Record<string, any>;
 } 

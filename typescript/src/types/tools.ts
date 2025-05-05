@@ -23,6 +23,15 @@ export interface ToolDefinition {
 }
 
 /**
+ * ツール情報の型（サーバーからクライアントに送られる形式）
+ */
+export interface ToolInfo {
+  name: string;
+  description: string;
+  input_schema: Record<string, any>;
+}
+
+/**
  * ツールのハンドラー関数の型
  */
 export type ToolHandler = (input: any) => Promise<any> | any;
