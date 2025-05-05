@@ -1,27 +1,22 @@
+/** @type {import('ts-jest').JestConfigWithTsJest} */
 export default {
-  preset: 'ts-jest',
+  preset: 'ts-jest/presets/js-with-ts-esm',
   testEnvironment: 'node',
-  extensionsToTreatAsEsm: ['.ts'],
+  transform: {
+    '^.+\\.tsx?$': [
+      'ts-jest',
+      {
+        useESM: true,
+      },
+    ],
+  },
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
-  transform: {
-    '^.+\\.tsx?$': [
-      'ts-jest', 
-      {
-        useESM: true,
-      }
-    ]
-  },
-  testMatch: [
-    '**/__tests__/**/*.spec.ts',
-  ],
-  collectCoverage: true,
-  collectCoverageFrom: [
-    'src/**/*.ts',
-    '!src/**/*.d.ts',
-    '!src/main.ts',
-  ],
+  extensionsToTreatAsEsm: ['.ts'],
+  testMatch: ['**/__tests__/**/*.spec.ts'],
+  coverageDirectory: 'coverage',
+  coverageReporters: ['text', 'lcov'],
   coverageThreshold: {
     global: {
       branches: 10,

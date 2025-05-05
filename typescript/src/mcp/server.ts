@@ -238,4 +238,54 @@ export class MCPServer {
       };
     }
   }
+
+  // レスポンスを送信する処理
+  private sendResponse = (response: MCPResponse) => {
+    try {
+      this.connection.send(JSON.stringify(response));
+    } catch (error) {
+      console.error('Failed to send response:', error);
+    }
+  };
+
+  // リクエストIDを取得する関数を追加
+  private getRequestId = (request: MCPRequest): string | undefined => {
+    return (request as any).id;
+  };
+
+  // function_callリクエストを処理
+  async handleFunctionCall(request: MCPRequest): Promise<void> {
+    if (request.type !== 'function_call') return;
+
+    try {
+      const toolName = request.name;
+      const tool = this.tools.get(toolName);
+
+      if (!tool) {
+        throw new Error(`Unknown tool: ${toolName}`);
+      }
+
+      let args;
+      try {
+        args = JSON.parse(request.arguments);
+      } catch (error) {
+        throw new Error(`Invalid JSON in arguments: ${error instanceof Error ? error.message : String(error)}`);
+      }
+
+      const result = await tool.handler(args);
+      this.sendResponse({
+        type: 'function_call_response',
+        name: toolName,
+        content: JSON.stringify(result),
+        id: this.getRequestId(request),
+      });
+    } catch (error) {
+      this.sendResponse({
+        type: 'function_call_response',
+        name: request.name,
+        error: error instanceof Error ? error.message : String(error),
+        id: this.getRequestId(request),
+      });
+    }
+  }
 } 
