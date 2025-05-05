@@ -1,123 +1,135 @@
-import { Connection, ReadableStreamLike, WritableStreamLike } from '../interfaces/connection.js';
-import { Logger } from '../interfaces/logger.js';
+import { Connection } from '../interfaces/connection.js';
+import { createInterface, Interface } from 'readline';
 import { defaultLogger } from '../utils/logger.js';
-import { createInterface } from 'readline';
 
 /**
- * 標準入出力を使用した通信実装
+ * 標準入出力を使ったMCP接続
  */
 export class StdioConnection implements Connection {
-  private connected = false;
-  private readBuffer: string[] = [];
-  private waitingForData: ((value: string) => void)[] = [];
-  private rl: ReturnType<typeof createInterface> | null = null;
+  private readline: Interface;
+  private isOpen: boolean = false;
+  private queue: string[] = [];
+  private resolveMap: Map<string, (message: string) => void> = new Map();
 
   /**
-   * コンストラクタ
-   * @param input 入力ストリーム（デフォルトはprocess.stdin）
-   * @param output 出力ストリーム（デフォルトはprocess.stdout）
-   * @param logger ロガー
+   * 標準入出力接続を初期化
    */
-  constructor(
-    private readonly input: ReadableStreamLike = process.stdin,
-    private readonly output: WritableStreamLike = process.stdout,
-    private readonly logger: Logger = defaultLogger
-  ) {}
-
-  /**
-   * 通信の初期化
-   */
-  async initialize(): Promise<void> {
-    if (this.connected) {
-      return;
-    }
-
-    this.rl = createInterface({
-      input: this.input as NodeJS.ReadableStream,
+  constructor() {
+    this.readline = createInterface({
+      input: process.stdin,
+      output: process.stdout,
       terminal: false
     });
 
-    this.rl.on('line', (line) => {
-      this.logger.debug(`Received: ${line}`);
-      
-      if (this.waitingForData.length > 0) {
-        // 待機中のリクエストがあれば、最初のリクエストに応答する
-        const resolve = this.waitingForData.shift()!;
-        resolve(line);
-      } else {
-        // 待機中のリクエストがなければバッファに追加
-        this.readBuffer.push(line);
-      }
+    this.isOpen = true;
+
+    // 標準入力からのメッセージを処理
+    this.readline.on('line', (line: string) => {
+      this.handleInput(line);
     });
 
-    this.connected = true;
-    this.logger.info('StdioConnection initialized');
+    // 終了時の処理
+    process.on('exit', () => {
+      this.close();
+    });
   }
 
   /**
-   * メッセージの送信
-   * @param message 送信するメッセージ（JSON文字列形式）
+   * 初期化処理
+   * すでにコンストラクタで初期化済みだが、インターフェース互換のため
    */
-  async send(message: string): Promise<void> {
-    if (!this.connected) {
-      throw new Error('Connection not initialized');
+  async initialize(): Promise<void> {
+    // コンストラクタですでに初期化済み
+    if (!this.isOpen) {
+      this.isOpen = true;
+      defaultLogger.debug('接続を再初期化しました');
     }
+  }
 
-    this.logger.debug(`Sending: ${message}`);
-    
-    return new Promise<void>((resolve, reject) => {
-      this.output.write(`${message}\n`, (error) => {
-        if (error) {
-          this.logger.error(`Failed to send message: ${error.message}`);
-          reject(error);
-        } else {
-          resolve();
+  /**
+   * 標準入力から受け取ったデータを処理
+   * @param line 入力行
+   */
+  private handleInput(line: string): void {
+    if (!this.isOpen) return;
+
+    try {
+      const message = line.trim();
+      if (message) {
+        defaultLogger.debug('受信メッセージ:', { message });
+        
+        // キューに追加
+        this.queue.push(message);
+        
+        // 待機中のreceiveがあれば解決
+        const resolve = this.resolveMap.get('receive');
+        if (resolve) {
+          const nextMessage = this.queue.shift();
+          this.resolveMap.delete('receive');
+          resolve(nextMessage!);
         }
-      });
-    });
-  }
-
-  /**
-   * メッセージの受信
-   * @returns 受信したメッセージ（JSON文字列形式）
-   */
-  async receive(): Promise<string> {
-    if (!this.connected) {
-      throw new Error('Connection not initialized');
+      }
+    } catch (error) {
+      defaultLogger.error('入力処理エラー:', { error });
     }
-
-    // バッファにデータがあればそれを返す
-    if (this.readBuffer.length > 0) {
-      return this.readBuffer.shift()!;
-    }
-
-    // バッファが空の場合は新しいデータを待つ
-    return new Promise<string>((resolve) => {
-      this.waitingForData.push(resolve);
-    });
-  }
-
-  /**
-   * 接続の終了
-   */
-  async close(): Promise<void> {
-    if (!this.connected) {
-      return;
-    }
-
-    if (this.rl) {
-      this.rl.close();
-      this.rl = null;
-    }
-
-    this.connected = false;
-    this.logger.info('StdioConnection closed');
   }
 
   /**
    * 接続が有効かどうかを確認
+   * @returns 接続が有効な場合はtrue
    */
   isConnected(): boolean {
-    return this.connected;
+    return this.isOpen;
+  }
+
+  /**
+   * メッセージを送信
+   * @param message 送信するメッセージ
+   */
+  async send(message: string): Promise<void> {
+    if (!this.isOpen) {
+      throw new Error('Connection is closed');
+    }
+
+    defaultLogger.debug('送信メッセージ:', { message });
+    process.stdout.write(`${message}\n`);
+  }
+
+  /**
+   * メッセージを受信
+   * @returns 受信したメッセージのPromise
+   */
+  async receive(): Promise<string> {
+    if (!this.isOpen) {
+      throw new Error('Connection is closed');
+    }
+
+    // キューにメッセージがあればすぐに返す
+    if (this.queue.length > 0) {
+      return this.queue.shift()!;
+    }
+
+    // メッセージを待機
+    return new Promise<string>((resolve) => {
+      this.resolveMap.set('receive', resolve);
+    });
+  }
+
+  /**
+   * 接続を閉じる
+   */
+  async close(): Promise<void> {
+    if (!this.isOpen) return;
+    
+    this.isOpen = false;
+    this.readline.close();
+    
+    // 待機中のPromiseをすべて解決
+    for (const [, resolve] of this.resolveMap) {
+      resolve('');
+    }
+    
+    this.resolveMap.clear();
+    defaultLogger.debug('接続を閉じました');
   }
 } 
