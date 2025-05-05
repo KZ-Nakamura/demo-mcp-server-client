@@ -11,6 +11,7 @@ import { MCPHost } from './mcp/host.js';
 import { LogLevel } from './interfaces/logger.js';
 import { LLMProviderFactory } from './llm-provider/factory.js';
 import { parseArgs } from 'node:util';
+import { NaturalLanguageCLI } from './cli/natural-language-cli.js';
 
 // プログラム名
 const PROGRAM_NAME = 'mcp';
@@ -25,6 +26,7 @@ const HELP_TEXT = `
 オプション:
   --server               サーバーモードで起動します
   --client               クライアントモードで起動します (デフォルト)
+  --chat                 自然言語対話モードで起動します
   --llm-provider <name>  LLMプロバイダーを指定します (デフォルト: ${config.preferredLlmProvider})
   --debug                デバッグモードで起動します
   --help                 このヘルプを表示します
@@ -35,6 +37,9 @@ const HELP_TEXT = `
   
   クライアントモードで起動:
     ${PROGRAM_NAME} --client
+  
+  自然言語対話モードで起動:
+    ${PROGRAM_NAME} --chat
   
   特定のLLMプロバイダーを使用:
     ${PROGRAM_NAME} --client --llm-provider=openai
@@ -47,7 +52,8 @@ function parseArguments(): Record<string, any> {
     client: { type: 'boolean' as const },
     'llm-provider': { type: 'string' as const, default: config.preferredLlmProvider },
     debug: { type: 'boolean' as const },
-    help: { type: 'boolean' as const }
+    help: { type: 'boolean' as const },
+    chat: { type: 'boolean' as const, default: false }
   };
 
   try {
@@ -80,17 +86,20 @@ async function main(): Promise<void> {
     defaultLogger.debug('デバッグモードで起動します');
   }
   
-  // モードの決定（サーバーかクライアントか）
+  // モードの決定
   const serverMode = args.server ?? false;
-  const clientMode = args.client ?? (!serverMode);
+  const clientMode = args.client ?? (!serverMode && !args.chat);
+  const chatMode = args.chat ?? false;
   
-  // サーバーモードかクライアントモードのどちらか
+  // 各モードの実行
   if (serverMode) {
     await runServer();
+  } else if (chatMode) {
+    await runChat(args);
   } else if (clientMode) {
     await runClient(args);
   } else {
-    console.error('サーバーモードかクライアントモードのどちらかを指定してください');
+    console.error('サーバーモード、クライアントモード、または自然言語対話モードのいずれかを指定してください');
     console.error(HELP_TEXT);
     process.exit(1);
   }
@@ -212,6 +221,32 @@ async function runClient(args: Record<string, any>): Promise<void> {
   }
   
   process.exit(0);
+}
+
+/**
+ * 自然言語対話モードでの実行
+ */
+async function runChat(args: Record<string, any>): Promise<void> {
+  defaultLogger.info('自然言語対話モードで起動します');
+  
+  // LLMプロバイダーの生成
+  const llmProviderType = args['llm-provider'];
+  defaultLogger.info(`LLMプロバイダー "${llmProviderType}" を使用します`);
+  
+  const llmProvider = LLMProviderFactory.create(llmProviderType);
+  
+  // 自然言語CLIの作成
+  const cli = new NaturalLanguageCLI(llmProvider);
+  
+  // シグナルハンドラの登録
+  process.on('SIGINT', async () => {
+    defaultLogger.info('自然言語対話モードを終了します...');
+    await cli.stop();
+    process.exit(0);
+  });
+  
+  // CLIを実行
+  await cli.start();
 }
 
 // プログラムの実行
