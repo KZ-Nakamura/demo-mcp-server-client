@@ -2,11 +2,11 @@ import { Connection } from '../interfaces/connection.js';
 import { Logger } from '../interfaces/logger.js';
 import { defaultLogger } from '../utils/logger.js';
 import { 
-  MCPMessage, 
-  MCPRequest, 
-  MCPResponse,
-  MCPListToolsResponse,
-  MCPCallToolResponse
+  JSONRPCRequest,
+  JSONRPCResponse,
+  JSONRPCSuccessResponse,
+  MCPListToolsResult,
+  MCPCallToolResult
 } from '../types/mcp.js';
 import { ToolInfo } from '../types/tools.js';
 
@@ -16,6 +16,7 @@ import { ToolInfo } from '../types/tools.js';
  */
 export class MCPClient {
   private connected = false;
+  private requestCounter = 0;
 
   /**
    * コンストラクタ
@@ -36,6 +37,22 @@ export class MCPClient {
     }
 
     await this.connection.initialize();
+    
+    // JSONRPCプロトコルバージョン2を使用する初期化リクエスト
+    const initResult = await this.sendJsonRpcRequest('initialize', {
+      protocolVersion: '2025-03-26',
+      client: {
+        name: 'MCP TypeScript Client',
+        version: '1.0.0'
+      }
+    });
+    
+    // 初期化通知
+    await this.connection.send(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'notifications/initialized'
+    }));
+    
     this.connected = true;
     this.logger.info('MCP client initialized');
   }
@@ -46,6 +63,12 @@ export class MCPClient {
   async close(): Promise<void> {
     if (!this.connected) {
       return;
+    }
+
+    try {
+      await this.sendJsonRpcRequest('shutdown', {});
+    } catch (error) {
+      this.logger.warn('Shutdown request failed', { error });
     }
 
     await this.connection.close();
@@ -62,13 +85,12 @@ export class MCPClient {
       throw new Error('Client not initialized');
     }
 
-    const request: MCPRequest = {
-      action: 'list_tools',
-      id: this.generateRequestId()
-    };
-
-    const response = await this.sendRequest<MCPListToolsResponse>(request);
-    return response.tools;
+    const result = await this.sendJsonRpcRequest<MCPListToolsResult>('tools/list', {});
+    return result.tools.map(tool => ({
+      name: tool.name,
+      description: tool.description,
+      input_schema: tool.inputSchema
+    }));
   }
 
   /**
@@ -82,92 +104,94 @@ export class MCPClient {
       throw new Error('Client not initialized');
     }
 
-    const request: MCPRequest = {
-      action: 'call_tool',
-      id: this.generateRequestId(),
-      tool_name: toolName,
-      inputs
-    };
-
-    const response = await this.sendRequest<MCPCallToolResponse>(request);
-    return response.output;
+    const result = await this.sendJsonRpcRequest<MCPCallToolResult>('tools/call', {
+      name: toolName,
+      args: inputs
+    });
+    
+    return result.content;
   }
 
   /**
-   * リクエストを送信し、レスポンスを待つ
-   * @param request リクエスト
-   * @returns レスポンス
+   * JSONRPCリクエストを送信し、レスポンスを待つ
+   * @param method メソッド名
+   * @param params パラメータ
+   * @returns レスポンス結果
    */
-  private async sendRequest<T extends MCPResponse>(request: MCPRequest): Promise<T> {
-    const requestStr = JSON.stringify(request);
+  private async sendJsonRpcRequest<T>(method: string, params: any): Promise<T> {
+    const id = ++this.requestCounter;
+    const request: JSONRPCRequest = {
+      jsonrpc: '2.0',
+      method,
+      params,
+      id
+    };
     
-    this.logger.debug(`Sending request: ${requestStr}`);
+    const requestStr = JSON.stringify(request);
+    this.logger.debug(`Sending JSON-RPC request:`, { request });
     await this.connection.send(requestStr);
 
     const responseStr = await this.connection.receive();
-    this.logger.debug(`Received response: ${responseStr}`);
+    this.logger.debug(`Received JSON-RPC response:`, { response: responseStr });
     
-    const response = this.parseResponse<T>(responseStr);
+    const response = this.parseJsonRpcResponse(responseStr);
     
-    if (response.error) {
-      throw new Error(`Server error: ${response.error}`);
+    if ('error' in response && response.error) {
+      const errorMsg = `Server error: ${response.error.message} (${response.error.code})`;
+      this.logger.error(errorMsg, { error: response.error });
+      throw new Error(errorMsg);
     }
     
-    return response;
+    return response.result as T;
   }
 
   /**
-   * レスポンス文字列をJSONオブジェクトにパース
+   * レスポンス文字列をJSONRPCレスポンスオブジェクトにパース
    * @param responseStr レスポンス文字列
    * @returns パースされたレスポンスオブジェクト
    */
-  private parseResponse<T extends MCPResponse>(responseStr: string): T {
+  private parseJsonRpcResponse(responseStr: string): JSONRPCResponse {
     try {
       // JSONオブジェクトかどうかを確認
       const trimmed = responseStr.trim();
       if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
-        // JSONでない場合はプレーンテキストとして扱い、適切なレスポンス形式にラップ
-        this.logger.info('非JSONレスポンスを処理します:', { responseStr });
-        
-        // リクエストに対応するレスポンス型を推測
-        const isToolCallResponse = 'output' in ({} as T);
-        
-        if (isToolCallResponse) {
-          // ツール呼び出しの場合
-          return {
-            id: `resp_${Date.now()}`,
-            success: true,
-            output: responseStr
-          } as unknown as T;
-        } else {
-          // その他の場合（デフォルト）
-          return {
-            id: `resp_${Date.now()}`,
-            success: true,
-            message: responseStr
-          } as unknown as T;
-        }
+        // JSONでない場合はエラーとして扱う
+        this.logger.warn('非JSONレスポンスを受信:', { responseStr });
+        return {
+          jsonrpc: '2.0',
+          id: null,
+          error: {
+            code: -32700,
+            message: `Parse error: Response is not a valid JSON - ${responseStr}`
+          }
+        };
       }
       
       // 通常のJSONパース
-      const response = JSON.parse(responseStr) as T;
+      const response = JSON.parse(responseStr) as JSONRPCResponse;
       
-      if (!response || typeof response !== 'object') {
-        throw new Error('Invalid response format');
+      if (!response || typeof response !== 'object' || response.jsonrpc !== '2.0') {
+        return {
+          jsonrpc: '2.0',
+          id: null,
+          error: {
+            code: -32600,
+            message: 'Invalid JSON-RPC response'
+          }
+        };
       }
       
       return response;
     } catch (error) {
-      this.logger.error(`Failed to parse response: ${error instanceof Error ? error.message : String(error)}`);
-      throw new Error(`Failed to parse response: ${responseStr}`);
+      this.logger.error(`Failed to parse JSON-RPC response:`, { error, responseStr });
+      return {
+        jsonrpc: '2.0',
+        id: null,
+        error: {
+          code: -32700,
+          message: `Parse error: ${error instanceof Error ? error.message : String(error)}`
+        }
+      };
     }
-  }
-
-  /**
-   * リクエストIDを生成
-   * @returns リクエストID
-   */
-  private generateRequestId(): string {
-    return `req_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
   }
 } 

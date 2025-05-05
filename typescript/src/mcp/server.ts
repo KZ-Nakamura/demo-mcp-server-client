@@ -2,12 +2,14 @@ import { Connection } from '../interfaces/connection.js';
 import { Logger } from '../interfaces/logger.js';
 import { defaultLogger } from '../utils/logger.js';
 import { 
-  MCPRequest, 
-  MCPResponse, 
-  MCPCallToolRequest, 
-  MCPListToolsRequest,
-  MCPCallToolResponse,
-  MCPListToolsResponse
+  JSONRPCRequest,
+  JSONRPCResponse,
+  JSONRPCSuccessResponse,
+  JSONRPCErrorResponse,
+  JSONRPCError,
+  MCPErrorCode,
+  MCPListToolsResult,
+  MCPCallToolResult
 } from '../types/mcp.js';
 import { 
   Tool, 
@@ -24,6 +26,7 @@ import { validateInput } from '../utils/schema-validator.js';
 export class MCPServer {
   private running = false;
   private tools: Map<string, Tool> = new Map();
+  private initialized = false;
 
   /**
    * コンストラクタ
@@ -151,18 +154,36 @@ export class MCPServer {
         const requestStr = await this.connection.receive();
         this.logger.debug(`Received request: ${requestStr}`);
         
-        let request: MCPRequest;
-        let response: MCPResponse;
+        let request: JSONRPCRequest;
+        let response: JSONRPCResponse;
         
         try {
-          request = JSON.parse(requestStr) as MCPRequest;
-          response = await this.processRequest(request);
+          // リクエストをパースする
+          request = this.parseJsonRpcRequest(requestStr);
+          
+          // JSON-RPC通知（IDなし）の場合
+          if (request.id === null || request.id === undefined) {
+            if (request.method === 'notifications/initialized') {
+              this.initialized = true;
+              this.logger.info('Server initialized');
+            }
+            continue; // レスポンスは返さない
+          }
+          
+          // リクエストを処理
+          response = await this.processJsonRpcRequest(request);
         } catch (error) {
           this.logger.error(`Error processing request: ${error instanceof Error ? error.message : String(error)}`);
+          
+          // パースエラーの場合は不明なリクエストIDとして扱う
           response = {
-            id: 'unknown_id',
-            error: `Error processing request: ${error instanceof Error ? error.message : String(error)}`
-          } as MCPResponse;
+            jsonrpc: '2.0',
+            id: null,
+            error: {
+              code: MCPErrorCode.ParseError,
+              message: error instanceof Error ? error.message : String(error)
+            }
+          };
         }
         
         const responseStr = JSON.stringify(response);
@@ -179,143 +200,194 @@ export class MCPServer {
   }
 
   /**
-   * リクエストを処理する
-   * @param request リクエスト
-   * @returns レスポンス
+   * JSON-RPCリクエストをパースする
+   * @param requestStr リクエスト文字列
+   * @returns パースされたJSONRPCリクエスト
    */
-  private async processRequest(request: MCPRequest): Promise<MCPResponse> {
-    switch (request.action) {
-      case 'list_tools':
-        return this.handleListTools(request as MCPListToolsRequest);
-      case 'call_tool':
-        return await this.handleCallTool(request as MCPCallToolRequest);
+  private parseJsonRpcRequest(requestStr: string): JSONRPCRequest {
+    if (!requestStr || typeof requestStr !== 'string') {
+      throw new Error('Invalid request format: empty or not a string');
+    }
+    
+    let parsed: any;
+    try {
+      parsed = JSON.parse(requestStr);
+    } catch (error) {
+      throw new Error(`JSON parse error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    
+    if (!parsed || typeof parsed !== 'object') {
+      throw new Error('Invalid request format: not an object');
+    }
+    
+    // jsonrpcフィールドのチェック
+    if (parsed.jsonrpc !== '2.0') {
+      throw new Error(`Invalid JSON-RPC version: ${parsed.jsonrpc}`);
+    }
+    
+    // methodフィールドのチェック
+    if (!parsed.method || typeof parsed.method !== 'string') {
+      throw new Error('Invalid method field');
+    }
+    
+    return parsed as JSONRPCRequest;
+  }
+
+  /**
+   * JSON-RPCリクエストを処理する
+   * @param request JSONRPCリクエスト
+   * @returns JSONRPCレスポンス
+   */
+  private async processJsonRpcRequest(request: JSONRPCRequest): Promise<JSONRPCResponse> {
+    // 初期化前の許可されたメソッド
+    const allowedPreInitMethods = ['initialize', 'ping'];
+    
+    // 初期化前で許可されていないメソッドの場合はエラー
+    if (!this.initialized && !allowedPreInitMethods.includes(request.method)) {
+      return this.createErrorResponse(request.id, MCPErrorCode.MethodNotFound,
+        `Method ${request.method} is not allowed before initialization`);
+    }
+    
+    switch (request.method) {
+      case 'initialize':
+        return this.handleInitialize(request);
+        
+      case 'ping':
+        return this.createSuccessResponse(request.id, 'pong');
+        
+      case 'tools/list':
+        return this.handleListTools(request);
+        
+      case 'tools/call':
+        return await this.handleCallTool(request);
+        
+      case 'shutdown':
+        // シャットダウンリクエストの処理
+        setTimeout(() => this.stop(), 100);
+        return this.createSuccessResponse(request.id, { success: true });
+        
       default:
-        return {
-          id: this.getRequestId(request),
-          error: `Unknown action: ${(request as any).action}`
-        } as MCPResponse;
+        return this.createErrorResponse(request.id, MCPErrorCode.MethodNotFound,
+          `Method ${request.method} not found`);
     }
   }
 
   /**
-   * ツール一覧取得リクエストを処理する
-   * @param request リクエスト
-   * @returns レスポンス
+   * 初期化リクエストを処理する
+   * @param request 初期化リクエスト
+   * @returns JSONRPCレスポンス
    */
-  private handleListTools(request: MCPListToolsRequest): MCPListToolsResponse {
-    try {
-      const tools = this.listTools();
-      return {
-        id: request.id,
-        tools
-      };
-    } catch (error) {
-      return {
-        id: request.id,
-        tools: [],
-        error: `Error listing tools: ${error instanceof Error ? error.message : String(error)}`
-      };
-    }
+  private handleInitialize(request: JSONRPCRequest): JSONRPCSuccessResponse {
+    const params = request.params || {};
+    this.logger.info(`Initializing with client: ${JSON.stringify(params.client || {})}`);
+    
+    return this.createSuccessResponse(request.id, {
+      protocolVersion: '2025-03-26',
+      serverInfo: {
+        name: 'MCP TypeScript Server',
+        version: '1.0.0'
+      }
+    });
+  }
+
+  /**
+   * ツール一覧リクエストを処理する
+   * @param request ツール一覧リクエスト
+   * @returns JSONRPCレスポンス
+   */
+  private handleListTools(request: JSONRPCRequest): JSONRPCSuccessResponse {
+    const tools = Array.from(this.tools.values()).map(tool => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema
+    }));
+    
+    const result: MCPListToolsResult = { tools };
+    return this.createSuccessResponse(request.id, result);
   }
 
   /**
    * ツール呼び出しリクエストを処理する
-   * @param request リクエスト
-   * @returns レスポンス
+   * @param request ツール呼び出しリクエスト
+   * @returns JSONRPCレスポンス
    */
-  private async handleCallTool(request: MCPCallToolRequest): Promise<MCPCallToolResponse> {
+  private async handleCallTool(request: JSONRPCRequest): Promise<JSONRPCResponse> {
+    const params = request.params || {};
+    
+    if (!params.name || typeof params.name !== 'string') {
+      return this.createErrorResponse(request.id, MCPErrorCode.InvalidParams,
+        'Tool name is required and must be a string');
+    }
+    
+    const toolName = params.name;
+    const args = params.args || {};
+    
     try {
-      const output = await this.callTool(request.tool_name, request.inputs);
-      return {
-        id: request.id,
-        output
+      // ツールの呼び出し
+      const output = await this.callTool(toolName, args);
+      
+      // Ruby実装との互換性を保つ
+      const result: MCPCallToolResult = {
+        output,
+        content: output // Ruby実装では'content'を使用
       };
+      
+      return this.createSuccessResponse(request.id, result);
     } catch (error) {
-      return {
-        id: request.id,
-        output: null,
-        error: `Error calling tool '${request.tool_name}': ${error instanceof Error ? error.message : String(error)}`
-      };
+      if (error instanceof ToolInputValidationError) {
+        return this.createErrorResponse(request.id, MCPErrorCode.InvalidToolInput, error.message);
+      } else if (error instanceof ToolExecutionError) {
+        return this.createErrorResponse(request.id, MCPErrorCode.ToolExecutionError, error.message);
+      } else if (error instanceof Error && error.message.includes('not found')) {
+        return this.createErrorResponse(request.id, MCPErrorCode.ToolNotFound, error.message);
+      } else {
+        return this.createErrorResponse(request.id, MCPErrorCode.InternalError,
+          `Tool execution error: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   }
 
-  // レスポンスを送信する処理
-  private sendResponse = (response: MCPResponse) => {
-    try {
-      this.connection.send(JSON.stringify(response));
-    } catch (error) {
-      console.error('Failed to send response:', error);
-    }
-  };
-
   /**
-   * リクエストのIDを取得する
-   * @param request リクエスト
-   * @returns リクエストID
+   * 成功レスポンスを作成する
+   * @param id リクエストID
+   * @param result 結果オブジェクト
+   * @returns 成功レスポンス
    */
-  private getRequestId(request: MCPRequest): string {
-    if ('id' in request) {
-      return request.id;
-    }
-    return `req_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  private createSuccessResponse(id: string | number | null, result: any): JSONRPCSuccessResponse {
+    return {
+      jsonrpc: '2.0',
+      id,
+      result
+    };
   }
 
   /**
-   * 関数呼び出しを処理する
-   * 
-   * この関数は将来の拡張用途として残しておくが現在は使用しない
+   * エラーレスポンスを作成する
+   * @param id リクエストID
+   * @param code エラーコード
+   * @param message エラーメッセージ
+   * @param data 追加データ（オプション）
+   * @returns エラーレスポンス
    */
-  async handleFunctionCall(request: MCPRequest): Promise<void> {
-    // 関数呼び出し以外は無視
-    if (!('type' in request) || request.type !== 'function_call') return;
-
-    try {
-      // ツール名を取得
-      if (!('name' in request)) {
-        throw new Error('Tool name is missing');
-      }
-      const toolName = request.name as string;
-      
-      // 引数を解析
-      let args: Record<string, any> = {};
-      try {
-        if ('arguments' in request) {
-          args = JSON.parse(request.arguments as string);
-        }
-      } catch (error) {
-        throw new Error(`Invalid arguments: ${error instanceof Error ? error.message : String(error)}`);
-      }
-      
-      // ツールを実行
-      try {
-        const result = await this.callTool(toolName, args);
-        
-        // 成功レスポンスを送信
-        const response: MCPCallToolResponse = {
-          id: this.getRequestId(request),
-          output: result
-        };
-        this.sendResponse(response);
-      } catch (error) {
-        // エラーレスポンスを送信
-        const response: MCPCallToolResponse = {
-          id: this.getRequestId(request),
-          output: null,
-          error: `Error calling tool: ${error instanceof Error ? error.message : String(error)}`
-        };
-        this.sendResponse(response);
-      }
-    } catch (error) {
-      // 予期しないエラー
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      defaultLogger.error(`Function call error: ${errorMessage}`);
-      
-      const response: MCPCallToolResponse = {
-        id: this.getRequestId(request),
-        error: `Function call error: ${errorMessage}`,
-        output: null
-      };
-      this.sendResponse(response);
+  private createErrorResponse(
+    id: string | number | null,
+    code: number,
+    message: string,
+    data?: any
+  ): JSONRPCErrorResponse {
+    const error: JSONRPCError = {
+      code,
+      message
+    };
+    
+    if (data !== undefined) {
+      error.data = data;
     }
+    
+    return {
+      jsonrpc: '2.0',
+      id,
+      error
+    };
   }
 } 
