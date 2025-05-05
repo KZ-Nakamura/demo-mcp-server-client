@@ -1,6 +1,8 @@
 require 'openai'
 require 'securerandom'
 require_relative 'base'
+require 'logger'
+require 'fileutils'
 
 module MCP
   module LLMProvider
@@ -11,10 +13,11 @@ module MCP
         @client = ::OpenAI::Client.new(access_token: api_key)
         @model = options[:model] || 'gpt-4o'
         @system = options[:system] || 'Respond only in Japanese.'
+        setup_logger
       end
 
       def generate_message(messages:, tools:, max_tokens: 1000)
-        puts "元のメッセージ: #{messages.inspect}"
+        @logger.debug("元のメッセージ: #{messages.inspect}")
         # OpenAI用にメッセージを加工
         processed_messages = messages.map do |msg|
           if msg[:role] && msg[:content]
@@ -30,13 +33,13 @@ module MCP
             # 文字列キーをシンボルキーに変換
             { role: msg['role'], content: msg['content'] }
           else
-            puts "警告: 不明なメッセージ形式: #{msg.inspect}"
+            @logger.warn("警告: 不明なメッセージ形式: #{msg.inspect}")
             # その他のケースはそのまま（警告を出す）
             msg
           end
         end
 
-        puts "処理後のメッセージ: #{processed_messages.inspect}"
+        @logger.debug("処理後のメッセージ: #{processed_messages.inspect}")
 
         # systemメッセージを追加
         processed_messages.unshift({ role: 'system', content: @system }) unless processed_messages.any? { |m| m[:role] == 'system' }
@@ -66,14 +69,14 @@ module MCP
           params[:tool_choice] = 'auto'
         end
 
-        puts "OpenAI API Request: #{params.inspect}"
+        @logger.debug("OpenAI API Request: #{params.inspect}")
 
         begin
           # APIリクエスト
           @client.chat(parameters: params)
         rescue Faraday::Error => e
           if e.response
-            puts "OpenAI API Error Response: #{e.response[:body]}"
+            @logger.error("OpenAI API Error Response: #{e.response[:body]}")
           end
           raise e
         end
@@ -136,6 +139,23 @@ module MCP
       end
 
       private
+
+      def setup_logger
+        @logger = Logger.new(get_log_file_path)
+        @logger.level = Logger::DEBUG
+        @logger.formatter = proc do |severity, datetime, progname, msg|
+          "[#{datetime.strftime('%Y-%m-%d %H:%M:%S')}] #{severity}: #{msg}\n"
+        end
+      end
+
+      def get_log_file_path
+        # logsディレクトリがなければ作成
+        log_dir = 'logs'
+        FileUtils.mkdir_p(log_dir) unless Dir.exist?(log_dir)
+        
+        # OpenAI用のログファイル名
+        "#{log_dir}/openai_#{Time.now.strftime('%Y%m%d')}.log"
+      end
 
       def process_assistant_message(msg)
         content = msg['content']
